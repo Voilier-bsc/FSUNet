@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 from torch.nn.modules import batchnorm
 from torch.utils.data import DataLoader
+import torch.optim.lr_scheduler as lr_scheduler
 from torch.utils.tensorboard import SummaryWriter
 
 import matplotlib.pyplot as plt
@@ -29,6 +30,9 @@ train_continue = configs.train_continue
 lr = configs.lr
 batch_size = configs.batch_size
 num_epoch = configs.num_epoch
+weight_decay = configs.weight_decay
+lr_decay_epochs = configs.lr_decay_epochs
+lr_decay = configs.lr_decay
 
 ny = configs.ny
 nx = configs.nx
@@ -37,6 +41,10 @@ data_dir = configs.data_dir
 ckpt_dir = configs.ckpt_dir
 log_dir = configs.log_dir
 result_dir = configs.result_dir
+
+encoder_relu = configs.encoder_relu
+decoder_relu = configs.decoder_relu
+
 
 ## create directory
 result_dir_train = os.path.join(result_dir, 'train')
@@ -75,13 +83,16 @@ num_classes = len(class_encoding)
 
 ## model
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-network = FSUNet(num_classes=num_classes).to(device)
+network = FSUNet(num_classes=num_classes, encoder_relu=encoder_relu, decoder_relu=decoder_relu).to(device)
 
 ## loss
 CrossEntropyLoss = nn.CrossEntropyLoss().to(device)
 
 ## optimizer
-optim = torch.optim.Adam(network.parameters(),lr=lr)
+optim = torch.optim.Adam(network.parameters(), lr=lr, weight_decay = weight_decay)
+
+## lr scheduler
+lr_updater = lr_scheduler.StepLR(optim, lr_decay_epochs, lr_decay)
 
 ## extra function
 fn_tonumpy = lambda x: x.to('cpu').detach().numpy().transpose(0, 2, 3, 1)[0]
@@ -121,6 +132,7 @@ if mode == 'train':
             loss.backward()
 
             optim.step()
+            lr_updater.step()
 
             loss_arr += [loss.item()]
 
@@ -181,11 +193,11 @@ if mode == 'train':
 
                     id = num_batch_val * (epoch - 1) + batch
 
-                    writer_train.add_image('input', input, id, dataformats='HWC')
-                    writer_train.add_image('label_seg', label, id, dataformats='HWC')
-                    writer_train.add_image('out_seg', out_seg, id, dataformats='HWC')
-                    writer_train.add_image('label_depth', depth, id, dataformats='HWC')
-                    writer_train.add_image('out_depth', out_depth, id, dataformats='HWC')
+                    writer_val.add_image('input', input, id, dataformats='HWC')
+                    writer_val.add_image('label_seg', label, id, dataformats='HWC')
+                    writer_val.add_image('out_seg', out_seg, id, dataformats='HWC')
+                    writer_val.add_image('label_depth', depth, id, dataformats='HWC')
+                    writer_val.add_image('out_depth', out_depth, id, dataformats='HWC')
 
 
         writer_val.add_scalar('loss', np.mean(loss_arr), epoch)
